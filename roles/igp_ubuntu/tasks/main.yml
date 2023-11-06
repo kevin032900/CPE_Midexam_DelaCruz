@@ -1,81 +1,68 @@
-- name: Installing dependencies 
-  apt:
-    name:  
-      - apt-transport-https
-      - software-properties-common 
-      - wget
-    state: latest
+  - name: install InfluxDB package (Ubuntu)
+    apt:
+      name: influxdb
+      state: present
 
-- name: Adding Influxdb in the repository
-  shell: |
-    wget -q https://repos.influxdata.com/influxdb.key
-    sleep 5
-    echo '23a1c8836f0afc5ed24e0486339d7cc8f6790b83886c4c96995b88a061c5bb5d influxdb.key' | sha256sum -c && cat influxdb.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/influxdb.gpg > /dev/null
-    sleep 5
-    echo 'deb [signed-by=/etc/apt/trusted.gpg.d/influxdb.gpg] https://repos.influxdata.com/debian stable main' | sudo tee /etc/apt/sources.list.d/influxdata.list
+  - name: Install required packages for Grafana (Ubuntu)
+    apt:
+      name: apt-transport-https
+      state: present
 
-- name: Installing Influxdb
-  apt:
-    name:
-      - influxdb
+  - name: Install the Grafana GPG key (Ubuntu)
+    apt_key:
+      url: https://packages.grafana.com/gpg.key
+    when: not (ansible_facts['apt_keys']|default([]) | select('match', 'grafana') | list)
 
-- name: Making sure that the Influxd is enabled and started
-  service:
-    name: influxdb
-    state: started
-    enabled: true
+  - name: Add Grafana APT repository (Ubuntu)
+    apt_repository:
+      repo: deb https://packages.grafana.com/oss/deb stable main
+      state: present
+    when: not (ansible_facts['apt_sources']|default([]) | select('match', 'grafana') | list)
 
-- name: Adding Grafana Repo
-  shell: |
-    sudo wget -q -O /usr/share/keyrings/grafana.key https://packages.grafana.com/gpg.key
+  - name: Install Grafana (Ubuntu)
+    apt:
+      name: grafana
+      state: present
 
-- name: Updating the repo and isntalling grafana
-  apt:
-    name:
-      - grafana
+  - name: Update Grafana configuration to allow network host
+    lineinfile:
+      dest: /etc/grafana/grafana.ini
+      regexp: '^;http_addr ='
+      line: 'http_addr = 0.0.0.0'
 
-- name: Reloading the daemon
-  shell: |
-    sudo systemctl daemon-reload
+  - name: Update Grafana configuration to change the default port to 3000
+    lineinfile:
+      dest: /etc/grafana/grafana.ini
+      regexp: '^;http_port ='
+      line: 'http_port = 3000'
 
-- name: Making sure that the Grafana server is started and enabled
-  service:
-    name: grafana-server
-    state: restarted
-    enabled: true
+  - name: install necessary packages for Prometheus (Ubuntu)
+    apt:
+      name: prometheus
+      state: present
 
-- name: Creating a directory (where the downloaded files will be stored)
-  tags: directory
-  file:
-    path: ~/prometheus
-    state: directory
-  
-- name: Downloading and extracting Prometheus
-  tags: source
-  unarchive:
-    src: https://github.com/prometheus/prometheus/releases/download/v2.39.1/prometheus-2.39.1.linux-amd64.tar.gz
-    dest: ~/prometheus
-    remote_src: yes
-    mode: 0777
-    owner: root
-    group: root
+  - name: Copying the Prometheus Configuration (Ubuntu)
+    copy:
+      src: prometheus.service
+      dest: /etc/systemd/system/prometheus.service
+      owner: root
+      group: root
+      mode: 777
 
-- name: Stopping the Prometheus service if its exist
-  shell: | 
-    sudo systemctl stop prometheus >> /dev/null
-  ignore_errors: yes
+  - name: enable / start InfluxDB (Ubuntu)
+    service:
+      name: influxdb
+      state: started
+      enabled: true
 
-- name: Adding the Prometheus executables to a PATH
-  tags: executables
-  shell: | 
-    cd ~/prometheus/prometheus*
-    cp -r . /usr/local/bin/prometheus
+  - name: Start and enable Grafana service (Ubuntu)
+    service:
+      name: grafana-server
+      state: started
+      enabled: true
 
-- name: Copying the Prometheus service file
-  tags: servicefile
-  copy:
-    src: prometheus.service
-    dest: /etc/systemd/system/
-    owner: root
-    group: root
-    mode: 777
+  - name: enable / start prometheus (Ubuntu)
+    service:
+      name: prometheus
+      state: started
+      enabled: yes
